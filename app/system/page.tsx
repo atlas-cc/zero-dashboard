@@ -46,14 +46,14 @@ export default function SystemPage() {
       const [dashRes, corrRes, logRes] = await Promise.all([
         fetch(apiUrl("dashboard")),
         fetch(apiUrl("corrections")),
-        fetch(`${API_URL}/api/log?limit=100`),
+        fetch(apiUrl("log?limit=100")),
       ]);
       const dash = await dashRes.json();
       const corr = await corrRes.json();
       const log = await logRes.json();
       setCosts(dash.costs);
-      setCorrections(corr);
-      setLogs(log);
+      setCorrections(Array.isArray(corr) ? corr : corr.corrections || []);
+      setLogs(Array.isArray(log) ? log : log.logs || []);
     } catch {
       // ignore
     } finally {
