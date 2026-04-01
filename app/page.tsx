@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import type { DashboardData, Task, Correction } from "../lib/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779";
+const _BASE = typeof window !== "undefined" && window.location.protocol === "https:"
+  ? ""
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779");
+function apiUrl(path: string) {
+  return _BASE ? `${_BASE}/api/${path}` : `/api/proxy/path?p=${encodeURIComponent(path)}`;
+}
+const API_URL = _BASE; // legacy compat
 
 function timeAgo(ts: string | null): string {
   if (!ts) return "never";
@@ -128,7 +134,7 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/dashboard`);
+      const res = await fetch(apiUrl("dashboard"));
       const json = await res.json();
       setData(json);
     } catch {

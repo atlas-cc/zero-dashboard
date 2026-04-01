@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import type { Correction, AgentLog } from "../../lib/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779";
+const _BASE = typeof window !== "undefined" && window.location.protocol === "https:"
+  ? ""
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779");
+function apiUrl(path: string) {
+  return _BASE ? `${_BASE}/api/${path}` : `/api/proxy/path?p=${encodeURIComponent(path)}`;
+}
+const API_URL = _BASE; // legacy compat
 
 interface Costs {
   today_usd: number;
@@ -38,8 +44,8 @@ export default function SystemPage() {
   const load = useCallback(async () => {
     try {
       const [dashRes, corrRes, logRes] = await Promise.all([
-        fetch(`${API_URL}/api/dashboard`),
-        fetch(`${API_URL}/api/corrections`),
+        fetch(apiUrl("dashboard")),
+        fetch(apiUrl("corrections")),
         fetch(`${API_URL}/api/log?limit=100`),
       ]);
       const dash = await dashRes.json();

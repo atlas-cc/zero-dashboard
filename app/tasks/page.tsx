@@ -3,7 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import type { Task } from "../../lib/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779";
+const _BASE = typeof window !== "undefined" && window.location.protocol === "https:"
+  ? ""
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:7779");
+function apiUrl(path: string) {
+  return _BASE ? `${_BASE}/api/${path}` : `/api/proxy/path?p=${encodeURIComponent(path)}`;
+}
+const API_URL = _BASE; // legacy compat
 
 const DOMAINS = ["general", "cencal", "raw", "deployfish"];
 
@@ -42,7 +48,7 @@ export default function TasksPage() {
 
   const loadTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/tasks`);
+      const res = await fetch(apiUrl("tasks"));
       const json = await res.json();
       setTasks(json);
     } catch {
@@ -62,7 +68,7 @@ export default function TasksPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/tasks`, {
+      const res = await fetch(apiUrl("tasks"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: title.trim(), domain, status: "pending", source: "dashboard" }),
