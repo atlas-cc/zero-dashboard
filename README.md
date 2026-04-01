@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ZERO Dashboard — Frontend
 
-## Getting Started
+Agent operations dashboard for monitoring ZERO AI agent activity, tasks, sprints, costs, and corrections.
 
-First, run the development server:
+**Stack:** Next.js 16 · React 19 · Tailwind CSS 4 · TypeScript
+
+**Color scheme:** Dark — `#0A0A0A` background · `#141414` cards · `#F5F5F5` primary text
+
+## Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Main dashboard — agent status, cost summary, sprint progress, kanban board, corrections feed |
+| `/tasks` | Full task list with filtering by status |
+| `/system` | System health, agent logs, live event stream |
+
+## Local Development
 
 ```bash
+# Install dependencies
+npm install
+
+# Set backend URL (optional, defaults to localhost:7779)
+echo "NEXT_PUBLIC_API_URL=http://localhost:7779" > .env.local
+
+# Run dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:7779` | ZERO backend API base URL |
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set `NEXT_PUBLIC_API_URL` to your Hetzner backend URL in the Vercel project environment variables, then connect the repo.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Backend — Install as systemd Service (Hetzner)
+
+Run these commands on your Hetzner server as root (or with sudo):
+
+```bash
+# 1. Copy the backend files to /opt/zero-dashboard
+sudo mkdir -p /opt/zero-dashboard
+sudo cp -r ~/zero-dashboard/backend /opt/zero-dashboard/
+sudo cp -r ~/zero-dashboard/scripts /opt/zero-dashboard/
+
+# 2. Install Python dependencies
+cd /opt/zero-dashboard/backend
+sudo pip3 install -r requirements.txt
+
+# 3. Create the systemd unit file
+sudo tee /etc/systemd/system/zero-dashboard.service > /dev/null <<EOF
+[Unit]
+Description=ZERO Agent Operations Dashboard API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/zero-dashboard/backend
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+RestartSec=5
+Environment=ZERO_DB_PATH=/var/lib/zero-dashboard/zero.db
+Environment=ZERO_PORT=7779
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 4. Create the data directory
+sudo mkdir -p /var/lib/zero-dashboard
+
+# 5. Reload systemd, enable and start the service
+sudo systemctl daemon-reload
+sudo systemctl enable zero-dashboard
+sudo systemctl start zero-dashboard
+
+# 6. Verify it's running
+sudo systemctl status zero-dashboard
+curl http://localhost:7779/api/dashboard
+```
+
+To view logs:
+
+```bash
+sudo journalctl -u zero-dashboard -f
+```
+
+To update the backend after pulling new code:
+
+```bash
+sudo cp -r ~/zero-dashboard/backend /opt/zero-dashboard/
+sudo systemctl restart zero-dashboard
+```
