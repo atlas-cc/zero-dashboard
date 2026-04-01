@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { DashboardData, Task, Correction } from "../lib/types";
+import type { Task, Correction } from "../lib/types";
 
 const _BASE = typeof window !== "undefined" && window.location.protocol === "https:"
   ? ""
@@ -9,7 +9,6 @@ const _BASE = typeof window !== "undefined" && window.location.protocol === "htt
 function apiUrl(path: string) {
   return _BASE ? `${_BASE}/api/${path}` : `/api/proxy/path?p=${encodeURIComponent(path)}`;
 }
-const API_URL = _BASE; // legacy compat
 
 function timeAgo(ts: string | null): string {
   if (!ts) return "never";
@@ -21,22 +20,15 @@ function timeAgo(ts: string | null): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "completed" ? "#22C55E"
-    : status === "in_progress" ? "#FBBF24"
-    : status === "failed" ? "#EF4444"
-    : "#A3A3A3";
+function isToday(ts: string | null): boolean {
+  if (!ts) return false;
+  const normalized = ts.endsWith("Z") || ts.includes("+") ? ts : ts + "Z";
+  const d = new Date(normalized);
+  const now = new Date();
   return (
-    <span style={{
-      display: "inline-block",
-      width: 7,
-      height: 7,
-      borderRadius: "50%",
-      backgroundColor: color,
-      flexShrink: 0,
-      marginTop: 3,
-    }} />
+    d.getUTCFullYear() === now.getUTCFullYear() &&
+    d.getUTCMonth() === now.getUTCMonth() &&
+    d.getUTCDate() === now.getUTCDate()
   );
 }
 
@@ -51,94 +43,54 @@ function DomainBadge({ domain }: { domain: string }) {
       borderRadius: "4px",
       letterSpacing: "0.05em",
       textTransform: "uppercase" as const,
+      flexShrink: 0,
     }}>
-      {domain}
+      {domain || "general"}
     </span>
   );
 }
 
-function TaskCard({ task }: { task: Task }) {
+function SectionLabel({ text }: { text: string }) {
   return (
     <div style={{
-      backgroundColor: "#1E1E1E",
-      border: "1px solid #2A2A2A",
-      borderRadius: "4px",
-      padding: "12px",
-      marginBottom: "8px",
+      fontSize: "11px",
+      fontWeight: 700,
+      letterSpacing: "0.1em",
+      color: "#A3A3A3",
+      textTransform: "uppercase" as const,
+      marginBottom: "12px",
     }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "6px" }}>
-        <StatusDot status={task.status} />
-        <span style={{ fontSize: "13px", fontWeight: 500, color: "#F5F5F5", lineHeight: 1.4 }}>
-          {task.title}
-        </span>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <DomainBadge domain={task.domain || "general"} />
-        <span style={{ fontSize: "11px", color: "#A3A3A3" }}>
-          {timeAgo(task.created_at)}
-        </span>
-      </div>
+      {text}
     </div>
   );
 }
 
-function KanbanColumn({ title, tasks, count, color }: {
-  title: string;
-  tasks: Task[];
-  count: number;
-  color: string;
-}) {
-  return (
-    <div style={{
-      backgroundColor: "#141414",
-      border: "1px solid #2A2A2A",
-      borderRadius: "4px",
-      padding: "12px",
-      minHeight: "180px",
-    }}>
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: "12px",
-        paddingBottom: "8px",
-        borderBottom: "1px solid #2A2A2A",
-      }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color, textTransform: "uppercase" as const }}>
-          {title}
-        </span>
-        <span style={{
-          backgroundColor: "#2A2A2A",
-          color: "#A3A3A3",
-          fontSize: "10px",
-          fontWeight: 700,
-          padding: "2px 6px",
-          borderRadius: "4px",
-          fontFamily: "monospace",
-        }}>
-          {count}
-        </span>
-      </div>
-      {tasks.length === 0 ? (
-        <p style={{ fontSize: "12px", color: "#A3A3A3", textAlign: "center", padding: "24px 0" }}>Empty</p>
-      ) : (
-        tasks.map((t: Task) => <TaskCard key={t.id} task={t} />)
-      )}
-    </div>
-  );
-}
+const CARD: React.CSSProperties = {
+  backgroundColor: "#141414",
+  border: "1px solid #2A2A2A",
+  borderRadius: "4px",
+  padding: "16px",
+  marginBottom: "16px",
+};
 
 export default function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [corrections, setCorrections] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("dashboard"));
-      const json = await res.json();
-      setData(json);
+      const [dashRes, tasksRes] = await Promise.all([
+        fetch(apiUrl("dashboard")),
+        fetch(apiUrl("tasks")),
+      ]);
+      const dash = await dashRes.json();
+      const taskList = await tasksRes.json();
+      setCorrections(Array.isArray(dash.corrections) ? dash.corrections : []);
+      setTasks(Array.isArray(taskList) ? taskList : []);
     } catch {
-      // keep stale data if available
+      // keep stale data
     } finally {
       setLoading(false);
     }
@@ -154,9 +106,9 @@ export default function Dashboard() {
     return (
       <div>
         <style>{`@keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }`}</style>
-        {[1, 2, 3, 4].map(i => (
+        {[120, 80, 140, 100].map((h, i) => (
           <div key={i} style={{
-            height: i === 3 ? "200px" : "64px",
+            height: `${h}px`,
             backgroundColor: "#141414",
             borderRadius: "4px",
             marginBottom: "16px",
@@ -167,165 +119,146 @@ export default function Dashboard() {
     );
   }
 
-  if (!data) {
-    return (
-      <div style={{ textAlign: "center", color: "#A3A3A3", padding: "48px" }}>
-        Unable to connect to ZERO backend.
-      </div>
-    );
-  }
-
-  const isOnline = data.agent.status === "online";
+  const attentionTasks = tasks.filter(t => t.status === "in_progress" || t.status === "failed");
+  const pendingTasks = [...tasks.filter(t => t.status === "pending")]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5);
+  const doneTodayTasks = tasks.filter(t => t.status === "completed" && isToday(t.completed_at));
+  const recentCorrections = corrections.slice(0, 3);
 
   return (
     <div>
-      <style>{`
-        @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
-        .pulse-dot { animation: blink 2s ease-in-out infinite; }
-      `}</style>
-
-      {/* Agent Status Bar */}
-      <div style={{
-        backgroundColor: "#141414",
-        border: "1px solid #2A2A2A",
-        borderRadius: "4px",
-        padding: "12px 16px",
-        marginBottom: "16px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap" as const,
-        gap: "8px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-            <span className="pulse-dot" style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              backgroundColor: isOnline ? "#22C55E" : "#EF4444",
-            }} />
-            <span style={{
-              fontSize: "12px",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              color: isOnline ? "#22C55E" : "#EF4444",
-            }}>
-              {isOnline ? "ONLINE" : "OFFLINE"}
-            </span>
+      {/* 1. NEEDS ATTENTION */}
+      <div style={CARD}>
+        <SectionLabel text="Needs Attention" />
+        {attentionTasks.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0" }}>
+            <span style={{ color: "#22C55E", fontSize: "16px" }}>&#10003;</span>
+            <span style={{ fontSize: "14px", color: "#22C55E", fontWeight: 500 }}>All clear</span>
           </div>
-          <span style={{ color: "#A3A3A3", fontSize: "12px" }}>
-            Last active {timeAgo(data.agent.last_active)}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <span style={{ fontSize: "12px", color: "#A3A3A3" }}>
-            Today: <span style={{ color: "#F5F5F5", fontWeight: 600, fontFamily: "monospace" }}>${data.costs.today_usd.toFixed(3)}</span>
-          </span>
-          <span style={{ fontSize: "12px", color: "#A3A3A3" }}>
-            Tokens: <span style={{ color: "#F5F5F5", fontWeight: 600, fontFamily: "monospace" }}>{data.costs.today_tokens.toLocaleString()}</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Sprint Card */}
-      <div style={{
-        backgroundColor: "#141414",
-        border: "1px solid #2A2A2A",
-        borderRadius: "4px",
-        padding: "16px",
-        marginBottom: "16px",
-      }}>
-        {data.sprint ? (
-          <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: "#FBBF24", textTransform: "uppercase" as const }}>
-                  Active Sprint
-                </span>
-                <span style={{
-                  backgroundColor: "rgba(251,191,36,0.1)",
-                  color: "#FBBF24",
-                  fontSize: "10px",
-                  padding: "2px 6px",
-                  borderRadius: "4px",
-                  fontWeight: 600,
-                }}>
-                  #{data.sprint.id}
-                </span>
-              </div>
-              <span style={{ fontSize: "12px", color: "#A3A3A3", fontFamily: "monospace" }}>
-                {data.sprint.steps_completed}/{data.sprint.total_steps}
-              </span>
-            </div>
-            <p style={{ fontSize: "14px", fontWeight: 600, color: "#F5F5F5", marginBottom: "10px" }}>
-              {data.sprint.mission}
-            </p>
-            <div style={{
-              backgroundColor: "#2A2A2A",
-              borderRadius: "4px",
-              height: "4px",
-              marginBottom: "8px",
-              overflow: "hidden",
-            }}>
-              <div style={{
-                backgroundColor: "#3B82F6",
-                height: "100%",
-                width: `${data.sprint.total_steps > 0 ? (data.sprint.steps_completed / data.sprint.total_steps) * 100 : 0}%`,
-                borderRadius: "4px",
-                transition: "width 0.3s ease",
-              }} />
-            </div>
-            {data.sprint.current_step && (
-              <p style={{ fontSize: "12px", color: "#A3A3A3" }}>{data.sprint.current_step}</p>
-            )}
-          </>
         ) : (
-          <div style={{ textAlign: "center", padding: "8px 0" }}>
-            <span style={{ fontSize: "13px", color: "#A3A3A3" }}>No active sprint</span>
-          </div>
+          attentionTasks.map(t => (
+            <div key={t.id} style={{
+              borderLeft: `3px solid ${t.status === "failed" ? "#EF4444" : "#FBBF24"}`,
+              paddingLeft: "12px",
+              marginBottom: "12px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" as const }}>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#F5F5F5" }}>{t.title}</span>
+                <DomainBadge domain={t.domain} />
+              </div>
+              <div style={{ fontSize: "11px", color: "#A3A3A3" }}>
+                Running {timeAgo(t.created_at)}
+                {t.notes && <span style={{ marginLeft: "10px", color: "#717171" }}>{t.notes}</span>}
+              </div>
+            </div>
+          ))
         )}
       </div>
 
-      {/* Task Kanban */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: "12px",
-        marginBottom: "16px",
-      }}>
-        <KanbanColumn title="Pending" tasks={data.tasks.pending} count={data.tasks.pending.length} color="#A3A3A3" />
-        <KanbanColumn title="In Progress" tasks={data.tasks.in_progress} count={data.tasks.in_progress.length} color="#FBBF24" />
-        <KanbanColumn title="Done" tasks={data.tasks.completed} count={data.tasks.completed.length} color="#22C55E" />
+      {/* 2. UP NEXT */}
+      <div style={CARD}>
+        <SectionLabel text="Up Next" />
+        {pendingTasks.length === 0 ? (
+          <p style={{ fontSize: "13px", color: "#A3A3A3" }}>Nothing queued. Add a task to get started.</p>
+        ) : (
+          pendingTasks.map(t => (
+            <div key={t.id} style={{
+              borderLeft: "3px solid #3B82F6",
+              paddingLeft: "12px",
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              flexWrap: "wrap" as const,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: "13px", color: "#F5F5F5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                  {t.title}
+                </span>
+                <DomainBadge domain={t.domain} />
+              </div>
+              <span style={{
+                backgroundColor: "#2A2A2A",
+                color: "#A3A3A3",
+                fontSize: "10px",
+                fontWeight: 700,
+                padding: "2px 6px",
+                borderRadius: "4px",
+                letterSpacing: "0.08em",
+                flexShrink: 0,
+              }}>QUEUED</span>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* Corrections Feed */}
-      <div style={{
-        backgroundColor: "#141414",
-        border: "1px solid #2A2A2A",
-        borderRadius: "4px",
-        padding: "16px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-          <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", color: "#A3A3A3", textTransform: "uppercase" as const }}>
-            Recent Corrections
-          </span>
-          <span style={{ fontSize: "11px", color: "#A3A3A3" }}>{data.corrections.length}</span>
-        </div>
-        {data.corrections.length === 0 ? (
-          <p style={{ fontSize: "13px", color: "#A3A3A3", textAlign: "center", padding: "12px 0" }}>No corrections logged</p>
+      {/* 3. DONE TODAY */}
+      <div style={CARD}>
+        <SectionLabel text={`Done Today (${doneTodayTasks.length})`} />
+        {doneTodayTasks.length === 0 ? (
+          <p style={{ fontSize: "13px", color: "#A3A3A3" }}>No completions yet today.</p>
         ) : (
-          data.corrections.map((c: Correction) => (
-            <div key={c.id} style={{ borderTop: "1px solid #2A2A2A", padding: "10px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "4px" }}>
-                <span style={{ fontSize: "13px", color: "#F5F5F5" }}>{c.description}</span>
-                <span style={{ fontSize: "11px", color: "#A3A3A3", whiteSpace: "nowrap" as const, flexShrink: 0 }}>{timeAgo(c.created_at)}</span>
+          doneTodayTasks.map(t => (
+            <div key={t.id} style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "8px",
+              flexWrap: "wrap" as const,
+            }}>
+              <span style={{ color: "#22C55E", fontSize: "13px", flexShrink: 0 }}>&#10003;</span>
+              <span style={{ fontSize: "13px", color: "#F5F5F5", flex: 1 }}>{t.title}</span>
+              <DomainBadge domain={t.domain} />
+              <span style={{ fontSize: "11px", color: "#A3A3A3", flexShrink: 0 }}>{timeAgo(t.completed_at)}</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 4. RECENT CORRECTIONS */}
+      <div style={CARD}>
+        <SectionLabel text="Recent Corrections" />
+        {recentCorrections.length === 0 ? (
+          <p style={{ fontSize: "13px", color: "#A3A3A3" }}>No corrections logged.</p>
+        ) : (
+          recentCorrections.map(c => (
+            <div
+              key={c.id}
+              onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+              style={{
+                borderLeft: "3px solid #EF4444",
+                paddingLeft: "12px",
+                marginBottom: "14px",
+                cursor: "pointer",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", flexWrap: "wrap" as const }}>
+                <span style={{
+                  backgroundColor: "rgba(239,68,68,0.15)",
+                  color: "#EF4444",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  letterSpacing: "0.05em",
+                  flexShrink: 0,
+                }}>CORRECTION</span>
+                <DomainBadge domain={c.domain} />
+                <span style={{ fontSize: "11px", color: "#A3A3A3", marginLeft: "auto" }}>{timeAgo(c.created_at)}</span>
               </div>
-              {c.corrected_behavior && (
-                <p style={{ fontSize: "12px", color: "#22C55E", marginBottom: "4px" }}>Correct: {c.corrected_behavior}</p>
+              <p style={{ fontSize: "13px", color: "#F5F5F5", marginBottom: expanded === c.id ? "8px" : 0 }}>
+                {c.description}
+              </p>
+              {expanded === c.id && c.corrected_behavior && (
+                <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #2A2A2A" }}>
+                  <div style={{ fontSize: "10px", fontWeight: 700, color: "#22C55E", letterSpacing: "0.08em", marginBottom: "4px" }}>
+                    CORRECT BEHAVIOR
+                  </div>
+                  <p style={{ fontSize: "12px", color: "#22C55E" }}>{c.corrected_behavior}</p>
+                </div>
               )}
-              <DomainBadge domain={c.domain || "general"} />
             </div>
           ))
         )}
